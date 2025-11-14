@@ -73,7 +73,7 @@ static THREAD_STORE: [ThreadStore; MAX_THREADS] = unsafe {
 thread_local! {
     static THREAD_ID: usize = THREAD_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
     /// Used to avoid recursive alloc/dealloc calls for interior allocation
-    static IN_ALLOC: Cell<bool> = Cell::new(false);
+    static IN_ALLOC: Cell<bool> = const { Cell::new(false) };
 }
 
 fn enter_alloc<T>(func: impl FnOnce() -> T) -> T {
@@ -84,14 +84,15 @@ fn enter_alloc<T>(func: impl FnOnce() -> T) -> T {
     output
 }
 
-#[derive(Default, Clone, Copy, Debug, PartialEq)]
+#[derive(Default, Clone, Copy, Debug)]
 pub enum BacktraceMode {
     #[default]
     /// Report no backtraces
     None,
     #[cfg(feature = "backtrace")]
     /// Report backtraces with unuseful entries removed (i.e. alloc_track, allocator internals)
-    Short,
+    /// Provides an additional filter function, which removes entries given the module path as an argument, when the returned value is false.
+    Short(fn(&str) -> bool),
     /// Report the full backtrace
     #[cfg(feature = "backtrace")]
     Full,
@@ -108,7 +109,14 @@ impl<T: GlobalAlloc> AllocTrack<T> {
         Self { inner, backtrace }
     }
 }
-#[cfg(all(unix, feature = "fs"))]
+
+#[cfg(all(target_os = "macos", feature = "fs"))]
+#[inline(always)]
+unsafe fn get_sys_tid() -> u32 {
+    0
+}
+
+#[cfg(all(target_os = "linux", feature = "fs"))]
 #[inline(always)]
 unsafe fn get_sys_tid() -> u32 {
     libc::syscall(libc::SYS_gettid) as u32
@@ -284,7 +292,12 @@ pub fn backtrace_report(
     BacktraceReport(out2)
 }
 
-#[cfg(all(unix, feature = "fs"))]
+#[cfg(all(target_os = "macos", feature = "fs"))]
+fn os_tid_names() -> HashMap<u32, String> {
+    Default::default()
+}
+
+#[cfg(all(target_os = "linux", feature = "fs"))]
 fn os_tid_names() -> HashMap<u32, String> {
     let mut os_tid_names: HashMap<u32, String> = HashMap::new();
     for task in procfs::process::Process::myself().unwrap().tasks().unwrap() {

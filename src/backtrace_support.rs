@@ -21,11 +21,11 @@ pub(super) struct TraceInfo {
     pub mode: BacktraceMode,
 }
 
-struct HashedBacktraceShort<'a>(&'a HashedBacktrace);
+struct HashedBacktraceShort<'a>(&'a HashedBacktrace, fn(&str) -> bool);
 
 impl<'a> fmt::Display for HashedBacktraceShort<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.display_short(f)
+        self.0.display_short(f, self.1)
     }
 }
 
@@ -62,7 +62,7 @@ impl HashedBacktrace {
         self.hash
     }
 
-    fn display_short(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn display_short(&self, f: &mut fmt::Formatter<'_>, filter: fn(&str) -> bool) -> fmt::Result {
         let full = f.alternate();
         let frames = self.inner().frames();
 
@@ -95,6 +95,13 @@ impl HashedBacktrace {
                         || name == "__libc_start_main_impl"
                         || name == "__libc_start_call_main"
                         || name.starts_with("std::rt::")
+                        || name.starts_with("tokio::")
+                        || name.starts_with("__rustc")
+                        || name.starts_with("core::ops")
+                        || name.starts_with("std::sys")
+                        || name == "std::panic::catch_unwind"
+                        || name == "unknown>"
+                        || !filter(name)
                     {
                         continue;
                     }
@@ -186,20 +193,20 @@ pub struct BacktraceReport(pub Vec<(HashedBacktrace, BacktraceMetric)>);
 impl BacktraceReport {
     pub fn csv(&self) -> String {
         let mut out = String::new();
-        write!(
+        writeln!(
             &mut out,
-            "allocated,allocations,avg_allocation,freed,total_used,backtrace\n"
+            "allocated,allocations,avg_allocation,freed,total_used,backtrace"
         )
         .unwrap();
         for (backtrace, metric) in &self.0 {
             match metric.mode {
                 BacktraceMode::None => unreachable!(),
-                BacktraceMode::Short => {
+                BacktraceMode::Short(filter) => {
                     metric.csv_write(&mut out).unwrap();
                     writeln!(
                         &mut out,
                         ",\"{}\"",
-                        HashedBacktraceShort(backtrace)
+                        HashedBacktraceShort(backtrace, filter)
                             .to_string()
                             .replace("\\", "\\\\")
                             .replace("\n", "\\n")
@@ -228,9 +235,11 @@ impl fmt::Display for BacktraceReport {
         for (backtrace, metric) in &self.0 {
             match metric.mode {
                 BacktraceMode::None => unreachable!(),
-                BacktraceMode::Short => {
-                    writeln!(f, "{}\n{metric}\n\n", HashedBacktraceShort(backtrace))?
-                }
+                BacktraceMode::Short(filter) => writeln!(
+                    f,
+                    "{}\n{metric}\n\n",
+                    HashedBacktraceShort(backtrace, filter)
+                )?,
                 BacktraceMode::Full => writeln!(f, "{:?}\n{metric}\n\n", backtrace.inner())?,
             }
         }

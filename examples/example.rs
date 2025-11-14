@@ -7,7 +7,7 @@ use std::{
 use alloc_track::{AllocTrack, BacktraceMode};
 
 #[global_allocator]
-static GLOBAL_ALLOC: AllocTrack<System> = AllocTrack::new(System, BacktraceMode::Short);
+static GLOBAL_ALLOC: AllocTrack<System> = AllocTrack::new(System, BacktraceMode::Short(|_| true));
 
 fn main() {
     let (sender, receiver) = mpsc::channel();
