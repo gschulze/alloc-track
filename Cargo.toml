@@ -16,11 +16,11 @@ backtrace = { version = "0.3", optional = true }
 [target.'cfg(target_os = "macos")'.dependencies]
 libc = { version = "0.2", optional = true }
 
-[target.'cfg(linux)'.dependencies]
+[target.'cfg(target_os = "linux")'.dependencies]
 libc = { version = "0.2", optional = true }
 procfs = { version = "0.14", optional = true }
 
-[target.'cfg(windows)'.dependencies]
+[target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.44.0", features = ["Win32_System_Threading", "Win32_Foundation","Win32_System_Diagnostics_ToolHelp"], optional = true }
 
 [features]
